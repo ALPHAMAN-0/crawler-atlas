@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Google Crawls the Web — System Design Explainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#dbe7ff;
+  --ink-dim:#8fa3c8;
+  --bg:#070d1a;
+  --bg2:#0b1426;
+  --panel:#0e1a33;
+  --panel2:#122142;
+  --line:#22375e;
+  --cyan:#5fd4ff;
+  --amber:#ffc25e;
+  --green:#7dedb2;
+  --rose:#ff8fa8;
+  --violet:#b79bff;
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'IBM Plex Sans',sans-serif;
+  --disp:'Fraunces',serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--sans);
+  line-height:1.65;
+  font-size:16px;
+  background-image:
+    linear-gradient(rgba(95,212,255,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(95,212,255,.045) 1px,transparent 1px);
+  background-size:44px 44px;
+}
+.wrap{max-width:880px;margin:0 auto;padding:0 20px 90px}
+/* ---------- hero ---------- */
+header{padding:64px 0 30px;position:relative}
+.kicker{font-family:var(--mono);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--cyan);margin-bottom:14px}
+.kicker::before{content:"◈ ";color:var(--amber)}
+h1{font-family:var(--disp);font-weight:800;font-size:clamp(34px,7vw,58px);line-height:1.05;letter-spacing:-.01em}
+h1 em{font-style:normal;color:var(--cyan)}
+.sub{margin-top:18px;color:var(--ink-dim);max-width:620px;font-size:17px}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px;font-family:var(--mono);font-size:11.5px}
+.legend span{border:1px solid var(--line);border-radius:999px;padding:4px 12px;background:var(--bg2)}
+.legend b{font-weight:600}
+.lc{color:var(--cyan)}.la{color:var(--amber)}.lg{color:var(--green)}.lv{color:var(--violet)}.lr{color:var(--rose)}
+/* ---------- section chrome ---------- */
+section{margin-top:70px}
+.stage-tag{display:inline-flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--bg);background:var(--cyan);padding:5px 14px;border-radius:4px;font-weight:600}
+.stage-tag.amber{background:var(--amber)}
+.stage-tag.green{background:var(--green)}
+.stage-tag.violet{background:var(--violet)}
+.stage-tag.rose{background:var(--rose)}
+h2{font-family:var(--disp);font-weight:800;font-size:clamp(26px,5vw,38px);margin:16px 0 10px;line-height:1.15}
+h3{font-family:var(--mono);font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan);margin:34px 0 12px}
+p.lead{color:var(--ink-dim);max-width:640px}
+p+p{margin-top:12px}
+strong{color:#fff;font-weight:600}
+code{font-family:var(--mono);font-size:.88em;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--amber)}
+/* ---------- pipeline diagram ---------- */
+.pipe{margin:34px 0 8px;display:flex;flex-direction:column;gap:0}
+.pnode{
+  border:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--bg2));
+  border-radius:12px;padding:18px 18px 16px;position:relative;
+  box-shadow:0 10px 30px rgba(0,0,0,.35);
+}
+.pnode .n{font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.2em}
+.pnode .t{font-family:var(--disp);font-weight:800;font-size:21px;margin:3px 0 5px}
+.pnode .d{font-size:14px;color:var(--ink-dim)}
+.pnode[data-c="cyan"]{border-top:3px solid var(--cyan)}
+.pnode[data-c="amber"]{border-top:3px solid var(--amber)}
+.pnode[data-c="green"]{border-top:3px solid var(--green)}
+.pnode[data-c="violet"]{border-top:3px solid var(--violet)}
+.pnode[data-c="rose"]{border-top:3px solid var(--rose)}
+.pipe .down{align-self:center;padding:6px 0;color:var(--cyan);font-family:var(--mono);font-size:13px;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.pipe .down::after{content:"▼";font-size:14px}
+.pipe .down span{font-size:10.5px;color:var(--ink-dim);letter-spacing:.14em;text-transform:uppercase;margin-bottom:2px}
+/* ---------- generic diagram panels ---------- */
+.diagram{
+  border:1px solid var(--line);border-radius:14px;background:var(--bg2);
+  padding:22px 18px;margin:22px 0;overflow-x:auto;
+}
+.diagram .cap{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:16px}
+.diagram .cap b{color:var(--cyan);font-weight:600}
+svg{display:block;max-width:100%;height:auto;margin:0 auto}
+svg text{font-family:'IBM Plex Mono',monospace}
+/* ---------- cards ---------- */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:20px 0}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px 16px 14px}
+.card .h{font-family:var(--mono);font-size:12.5px;font-weight:600;letter-spacing:.06em;color:var(--cyan);margin-bottom:7px}
+.card.amber .h{color:var(--amber)}.card.green .h{color:var(--green)}.card.violet .h{color:var(--violet)}.card.rose .h{color:var(--rose)}
+.card p{font-size:13.8px;color:var(--ink-dim)}
+/* ---------- spec tables ---------- */
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}
+td{padding:10px 12px;border-bottom:1px solid rgba(34,55,94,.55);color:var(--ink-dim);vertical-align:top}
+td:first-child{color:var(--ink);font-family:var(--mono);font-size:13px;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.tbox{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel);overflow-x:auto}
+/* ---------- callout ---------- */
+.callout{border-left:3px solid var(--amber);background:rgba(255,194,94,.06);border-radius:0 10px 10px 0;padding:14px 16px;margin:20px 0;font-size:14.5px;color:var(--ink-dim)}
+.callout b{color:var(--amber);font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;display:block;margin-bottom:5px}
+/* ---------- budget formula ---------- */
+.formula{
+  display:flex;align-items:stretch;justify-content:center;gap:12px;flex-wrap:wrap;
+  font-family:var(--mono);margin:24px 0;text-align:center
+}
+.fbox{border:1.5px solid var(--line);border-radius:12px;padding:16px 18px;min-width:150px;background:var(--panel)}
+.fbox .fh{font-size:12px;font-weight:600;letter-spacing:.1em}
+.fbox .fd{font-size:11.5px;color:var(--ink-dim);margin-top:6px;line-height:1.5}
+.fop{align-self:center;font-size:26px;color:var(--cyan);font-weight:600}
+.fbox.hl{border-color:var(--cyan);box-shadow:0 0 24px rgba(95,212,255,.15)}
+.fbox.hl .fh{color:var(--cyan)}
+.fbox.a .fh{color:var(--amber)}.fbox.g .fh{color:var(--green)}
+/* ---------- footer / sources ---------- */
+.sources{margin-top:70px;border-top:1px solid var(--line);padding-top:26px}
+.sources h2{font-size:22px}
+.sources ol{margin:14px 0 0 20px;color:var(--ink-dim);font-size:14px}
+.sources li{margin-bottom:8px}
+a{color:var(--cyan);text-decoration:none;border-bottom:1px dotted rgba(95,212,255,.5)}
+a:hover{border-bottom-style:solid}
+.foot{margin-top:40px;font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);letter-spacing:.08em}
+/* reveal animation */
+.rv{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s ease}
+.rv.in{opacity:1;transform:none}
+@media (min-width:720px){
+  .pipe{flex-direction:row;align-items:stretch}
+  .pipe .pnode{flex:1}
+  .pipe .down{padding:0 4px;justify-content:center}
+  .pipe .down::after{content:"▶"}
+  .pipe .down span{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">System design · Search infrastructure</div>
+  <h1>How <em>Google</em> crawls the web — and how the machine is designed</h1>
+  <p class="sub">A visual walk through the full pipeline Google runs billions of times a day: discovering URLs, scheduling them, fetching with Googlebot, rendering JavaScript in Chromium, building the index, and serving ranked results.</p>
+  <div class="legend">
+    <span class="lc"><b>■</b> Crawling</span>
+    <span class="la"><b>■</b> Rendering</span>
+    <span class="lg"><b>■</b> Indexing</span>
+    <span class="lv"><b>■</b> Serving</span>
+    <span class="lr"><b>■</b> Control &amp; safety</span>
+  </div>
+</header>
+
+<!-- ============ BIG PICTURE ============ -->
+<section class="rv">
+  <span class="stage-tag">The big picture</span>
+  <h2>One pipeline, five stages</h2>
+  <p class="lead">Google Search is a giant distributed pipeline. Every page you find in results has passed through each of these stages — and a page can fail out at any one of them.</p>
+
+  <div class="pipe">
+    <div class="pnode" data-c="cyan"><div class="n">01</div><div class="t">Discover</div><div class="d">Find URLs via links, sitemaps &amp; past crawls</div></div>
+    <div class="down"><span>feeds</span></div>
+    <div class="pnode" data-c="cyan"><div class="n">02</div><div class="t">Crawl</div><div class="d">Googlebot fetches pages politely, at scale</div></div>
+    <div class="down"><span>feeds</span></div>
+    <div class="pnode" data-c="amber"><div class="n">03</div><div class="t">Render</div><div class="d">Headless Chromium executes JavaScript</div></div>
+    <div class="down"><span>feeds</span></div>
+    <div class="pnode" data-c="green"><div class="n">04</div><div class="t">Index</div><div class="d">Parse, dedupe, canonicalize, store</div></div>
+    <div class="down"><span>feeds</span></div>
+    <div class="pnode" data-c="violet"><div class="n">05</div><div class="t">Serve</div><div class="d">Retrieve &amp; rank for each query</div></div>
+  </div>
+
+  <div class="callout"><b>Key idea</b>Nothing is guaranteed. A discovered URL may never be crawled; a crawled page may never be rendered; a rendered page may never be indexed. Each stage has its own queue, its own budget, and its own quality gates.</div>
+</section>
+
+<!-- ============ FULL ARCHITECTURE ============ -->
+<section class="rv">
+  <span class="stage-tag rose">Architecture</span>
+  <h2>The full system, on one schematic</h2>
+  <p class="lead">This is the design of the crawl-to-serve machine, distributed across data centers on thousands of servers. Solid arrows are the main data flow; the loop from link extraction back to the URL frontier is what makes the crawler continuous.</p>
+
+  <div class="diagram">
+    <div class="cap"><b>Fig. 1</b> — end-to-end architecture</div>
+    <svg viewBox="0 0 760 980" role="img" aria-label="Google crawl and index architecture diagram">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#5fd4ff"/>
+        </marker>
+        <marker id="arg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#7dedb2"/>
+        </marker>
+      </defs>
+      <style>
+        .bx{fill:#122142;stroke:#2c4a80;stroke-width:1.4;rx:10}
+        .bt{fill:#dbe7ff;font-size:15px;font-weight:600}
+        .bs{fill:#8fa3c8;font-size:11px}
+        .fl{stroke:#5fd4ff;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+        .fg{stroke:#7dedb2;stroke-width:1.6;fill:none;marker-end:url(#arg);stroke-dasharray:5 4}
+        .lbl{fill:#5fd4ff;font-size:10.5px}
+        .lblg{fill:#7dedb2;font-size:10.5px}
+        .zone{fill:none;stroke:#22375e;stroke-dasharray:3 5;rx:14}
+        .zt{fill:#8fa3c8;font-size:10px;letter-spacing:2px}
+      </style>
+
+      <!-- SOURCES -->
+      <text class="zt" x="30" y="26">URL SOURCES</text>
+      <rect class="bx" x="30" y="36" width="210" height="52" rx="10"/>
+      <text class="bt" x="45" y="59">Known pages</text><text class="bs" x="45" y="76">re-crawl of past index</text>
+      <rect class="bx" x="270" y="36" width="210" height="52" rx="10"/>
+      <text class="bt" x="285" y="59">Links on pages</text><text class="bs" x="285" y="76">&lt;a href&gt; extraction</text>
+      <rect class="bx" x="510" y="36" width="220" height="52" rx="10"/>
+      <text class="bt" x="525" y="59">Sitemaps</text><text class="bs" x="525" y="76">XML feeds + Search Console</text>
+
+      <path class="fl" d="M135 88 L135 128 L360 128 L360 148"/>
+      <path class="fl" d="M375 88 L375 148"/>
+      <path class="fl" d="M620 88 L620 128 L390 128 L390 148"/>
+
+      <!-- FRONTIER -->
+      <rect class="bx" x="180" y="150" width="400" height="66" rx="10"/>
+      <text class="bt" x="200" y="177">URL Frontier (crawl queue)</text>
+      <text class="bs" x="200" y="196">dedup · priority = popularity + staleness + demand</text>
+
+      <path class="fl" d="M380 216 L380 250"/>
+      <text class="lbl" x="392" y="240">next URL</text>
+
+      <!-- SCHEDULER -->
+      <rect class="bx" x="180" y="252" width="400" height="66" rx="10"/>
+      <text class="bt" x="200" y="279">Crawl Scheduler</text>
+      <text class="bs" x="200" y="298">per-host budget = min(capacity limit, crawl demand)</text>
+
+      <path class="fl" d="M380 318 L380 352"/>
+
+      <!-- POLITENESS -->
+      <rect class="bx" x="60" y="354" width="300" height="66" rx="10"/>
+      <text class="bt" x="80" y="381">robots.txt check</text>
+      <text class="bs" x="80" y="400">cached rules · allow / disallow</text>
+      <rect class="bx" x="400" y="354" width="300" height="66" rx="10"/>
+      <text class="bt" x="420" y="381">DNS resolver</text>
+      <text class="bs" x="420" y="400">cached hostname → IP</text>
+
+      <path class="fl" d="M210 420 L210 448 L360 448 L360 462"/>
+      <path class="fl" d="M550 420 L550 448 L400 448 L400 462"/>
+
+      <!-- FETCHERS -->
+      <rect class="bx" x="120" y="464" width="520" height="76" rx="10"/>
+      <text class="bt" x="140" y="492">Googlebot fetcher fleet</text>
+      <text class="bs" x="140" y="511">1000s of distributed machines · HTTP/1.1 + HTTP/2 · gzip/brotli</text>
+      <text class="bs" x="140" y="527">≤ 2 MB per HTML page · backs off on 5xx / 429</text>
+
+      <path class="fl" d="M380 540 L380 574"/>
+      <text class="lbl" x="392" y="564">HTTP 200 + HTML</text>
+
+      <!-- PROCESSING -->
+      <rect class="bx" x="60" y="576" width="300" height="66" rx="10"/>
+      <text class="bt" x="80" y="603">HTML parser</text>
+      <text class="bs" x="80" y="622">tokens · meta · links · hreflang</text>
+      <rect class="bx" x="400" y="576" width="300" height="66" rx="10"/>
+      <text class="bt" x="420" y="603">Render queue → WRS</text>
+      <text class="bs" x="420" y="622">headless evergreen Chromium runs JS</text>
+
+      <!-- link loop back -->
+      <path class="fg" d="M60 609 L28 609 L28 183 L178 183"/>
+      <text class="lblg" x="8" y="390" transform="rotate(-90 8 390)">new links loop back to frontier</text>
+      <path class="fg" d="M700 609 L734 609 L734 183 L582 183"/>
+      <text class="lblg" x="752 " y="420" transform="rotate(90 752 420)">links found after JS render</text>
+
+      <path class="fl" d="M210 642 L210 670 L360 670 L360 684"/>
+      <path class="fl" d="M550 642 L550 670 L400 670 L400 684"/>
+
+      <!-- INDEXING -->
+      <rect class="bx" x="80" y="686" width="600" height="90" rx="10"/>
+      <text class="bt" x="100" y="714">Indexing pipeline (Caffeine)</text>
+      <text class="bs" x="100" y="733">canonicalization &amp; duplicate clustering · signal extraction (language,</text>
+      <text class="bs" x="100" y="749">country, usability) · link graph / PageRank · spam &amp; quality filters</text>
+
+      <path class="fl" d="M380 776 L380 810"/>
+      <text class="lbl" x="392" y="800">canonical docs</text>
+
+      <!-- INDEX -->
+      <rect class="bx" x="120" y="812" width="520" height="66" rx="10"/>
+      <text class="bt" x="140" y="839">The Google Index</text>
+      <text class="bs" x="140" y="858">inverted index + doc store, sharded over 1000s of machines</text>
+
+      <path class="fl" d="M380 878 L380 912"/>
+      <text class="lbl" x="392" y="902">query time</text>
+
+      <!-- SERVING -->
+      <rect class="bx" x="120" y="914" width="520" height="60" rx="10"/>
+      <text class="bt" x="140" y="940">Serving &amp; ranking</text>
+      <text class="bs" x="140" y="957">retrieve → score with 100s of signals → assemble results page</text>
+    </svg>
+  </div>
+</section>
+
+<!-- ============ STAGE 1 DISCOVERY ============ -->
+<section class="rv">
+  <span class="stage-tag">Stage 01 · Discovery</span>
+  <h2>URL discovery — how Google finds pages</h2>
+  <p class="lead">There is no central registry of the web. Google must constantly discover what exists, using three main sources.</p>
+
+  <div class="cards">
+    <div class="card"><div class="h">↻ Known pages</div><p>Google revisits pages it has crawled before to check for changes. Most crawling is actually <strong>re-crawling</strong> of already-known URLs.</p></div>
+    <div class="card"><div class="h">⛓ Link extraction</div><p>When a known page links to a new URL (a category page linking to a new blog post), the crawler extracts the <code>&lt;a href&gt;</code> and queues it. This is how the crawler "spiders" outward.</p></div>
+    <div class="card"><div class="h">🗺 Sitemaps</div><p>Site owners submit XML sitemaps (directly or via Search Console) listing URLs with <code>&lt;lastmod&gt;</code> hints, giving Google an inventory of the site.</p></div>
+  </div>
+
+  <h3>The URL frontier</h3>
+  <p>Every discovered URL lands in the <strong>URL frontier</strong> — a massive, deduplicated priority queue. It answers one question continuously: <em>of the billions of URLs we know about, which should we fetch next?</em> Priority is driven by how popular a URL is, how likely it is to have changed since the last visit (<strong>staleness</strong>), and how much Google wants content from that site (<strong>crawl demand</strong>).</p>
+</section>
+
+<!-- ============ STAGE 2 CRAWLING ============ -->
+<section class="rv">
+  <span class="stage-tag">Stage 02 · Crawling</span>
+  <h2>Googlebot — the fetching machine</h2>
+  <p class="lead">Googlebot is not one bot: it's a fleet of crawlers running on thousands of machines, mostly from US data centers, engineered around one rule — <strong>never take a website down</strong>.</p>
+
+  <h3>Politeness &amp; crawl budget</h3>
+  <p>Before any fetch, Googlebot checks the site's <code>robots.txt</code> (cached) and respects disallow rules. Then it throttles itself per host. The amount it will crawl on your site is the <strong>crawl budget</strong>:</p>
+
+  <div class="formula">
+    <div class="fbox a"><div class="fh">CRAWL CAPACITY</div><div class="fd">max parallel connections × time your server can handle — grows when the site is fast &amp; stable, shrinks on slowdowns and 5xx errors</div></div>
+    <div class="fop">∧</div>
+    <div class="fbox g"><div class="fh">CRAWL DEMAND</div><div class="fd">how much Google wants your URLs — perceived inventory, popularity, staleness of stored copies</div></div>
+    <div class="fop">=</div>
+    <div class="fbox hl"><div class="fh">CRAWL BUDGET</div><div class="fd">the set of URLs Google can and wants to crawl on your site</div></div>
+  </div>
+
+  <div class="callout"><b>Adaptive feedback loop</b>The crawl rate is a live control system. Fast responses and HTTP 200s → the limit creeps up. Server errors (<code>500</code>), timeouts, or <code>429 Too Many Requests</code> → Googlebot backs off immediately. Your server is effectively steering the crawler in real time.</div>
+
+  <h3>Fetch mechanics</h3>
+  <div class="tbox"><table>
+    <tr><th>Property</th><th>How it works</th></tr>
+    <tr><td>Protocols</td><td>HTTP/1.1 and HTTP/2 (Googlebot picks HTTP/2 when the site supports it, saving connections)</td></tr>
+    <tr><td>HTML limit</td><td>Fetches up to <strong>2 MB</strong> per HTML page — the fetch stops exactly at the cutoff; bytes beyond it are never rendered or indexed</td></tr>
+    <tr><td>PDF limit</td><td>Up to <strong>64 MB</strong>; other Google crawlers default to 15 MB where unspecified</td></tr>
+    <tr><td>DNS</td><td>Hostnames are resolved through Google's own caching DNS infrastructure before fetching</td></tr>
+    <tr><td>Identity</td><td>Sends a <code>Googlebot</code> user-agent and crawls from published IP ranges, so servers can verify real Googlebot via reverse DNS</td></tr>
+    <tr><td>Mobile-first</td><td>The primary crawler is <strong>Googlebot Smartphone</strong> — Google predominantly crawls and indexes the mobile version of pages</td></tr>
+    <tr><td>Variants</td><td>Specialized crawlers exist for images, video, news, ads, and AI training (e.g. <code>Googlebot-Image</code>, <code>GoogleOther</code>, <code>Google-Extended</code>)</td></tr>
+  </table></div>
+
+  <div class="diagram">
+    <div class="cap"><b>Fig. 2</b> — the per-URL crawl decision path</div>
+    <svg viewBox="0 0 720 560" role="img" aria-label="Crawl decision flowchart">
+      <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#5fd4ff"/></marker></defs>
+      <style>
+        .db{fill:#122142;stroke:#2c4a80;stroke-width:1.4}
+        .dd{fill:#1a2f5c;stroke:#5fd4ff;stroke-width:1.4}
+        .dt{fill:#dbe7ff;font-size:14px;font-weight:600}
+        .ds{fill:#8fa3c8;font-size:11px}
+        .fl2{stroke:#5fd4ff;stroke-width:1.6;fill:none;marker-end:url(#ar2)}
+        .no{fill:#ff8fa8;font-size:11px;font-weight:600}
+        .yes{fill:#7dedb2;font-size:11px;font-weight:600}
+      </style>
+      <rect class="db" x="250" y="14" width="220" height="48" rx="10"/>
+      <text class="dt" x="285" y="43">URL from scheduler</text>
+      <path class="fl2" d="M360 62 L360 92"/>
+
+      <polygon class="dd" points="360,94 500,134 360,174 220,134"/>
+      <text class="dt" x="300" y="131">robots.txt</text><text class="ds" x="296" y="148">allows crawl?</text>
+      <path class="fl2" d="M500 134 L600 134 L600 194"/>
+      <text class="no" x="560" y="126">NO</text>
+      <rect class="db" x="520" y="196" width="170" height="52" rx="10"/>
+      <text class="dt" x="537" y="218">Skip fetch</text><text class="ds" x="537" y="236">URL may still be known</text>
+
+      <path class="fl2" d="M360 174 L360 204"/>
+      <text class="yes" x="372" y="196">YES</text>
+      <polygon class="dd" points="360,206 500,246 360,286 220,246"/>
+      <text class="dt" x="292" y="243">host budget</text><text class="ds" x="290" y="260">available now?</text>
+      <path class="fl2" d="M220 246 L120 246 L120 306"/>
+      <text class="no" x="150" y="238">NO</text>
+      <rect class="db" x="40" y="308" width="170" height="52" rx="10"/>
+      <text class="dt" x="57" y="330">Re-queue</text><text class="ds" x="57" y="348">wait for capacity</text>
+
+      <path class="fl2" d="M360 286 L360 316"/>
+      <text class="yes" x="372" y="308">YES</text>
+      <rect class="db" x="240" y="318" width="240" height="56" rx="10"/>
+      <text class="dt" x="262" y="342">HTTP GET (≤ 2 MB)</text>
+      <text class="ds" x="262" y="360">HTTP/2 or 1.1 · compressed</text>
+
+      <path class="fl2" d="M360 374 L360 404"/>
+      <polygon class="dd" points="360,406 500,446 360,486 220,446"/>
+      <text class="dt" x="308" y="443">response?</text><text class="ds" x="292" y="460">status code check</text>
+
+      <path class="fl2" d="M220 446 L120 446 L120 500"/>
+      <text class="no" x="128" y="438">5xx / 429</text>
+      <rect class="db" x="35" y="502" width="180" height="50" rx="10"/>
+      <text class="dt" x="52" y="524">Back off</text><text class="ds" x="52" y="541">slow whole-site crawl</text>
+
+      <path class="fl2" d="M500 446 L600 446 L600 500"/>
+      <text class="no" x="524" y="438">404/410</text>
+      <rect class="db" x="512" y="502" width="180" height="50" rx="10"/>
+      <text class="dt" x="529" y="524">Drop / forget</text><text class="ds" x="529" y="541">recrawl less over time</text>
+
+      <path class="fl2" d="M360 486 L360 512"/>
+      <text class="yes" x="372" y="506">200 OK</text>
+      <rect class="db" x="255" y="514" width="210" height="40" rx="10"/>
+      <text class="dt" x="277" y="539">→ parse &amp; render</text>
+    </svg>
+  </div>
+</section>
+
+<!-- ============ STAGE 3 RENDERING ============ -->
+<section class="rv">
+  <span class="stage-tag amber">Stage 03 · Rendering</span>
+  <h2>Rendering — Google runs your JavaScript</h2>
+  <p class="lead">Modern pages build much of their content with JavaScript, so raw HTML isn't enough. Google renders pages with its <strong>Web Rendering Service (WRS)</strong> — a headless, always-up-to-date ("evergreen") version of Chromium, essentially the same engine as your Chrome browser.</p>
+
+  <div class="diagram">
+    <div class="cap"><b>Fig. 3</b> — the two-wave processing model</div>
+    <svg viewBox="0 0 720 330" role="img" aria-label="Two wave rendering diagram">
+      <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#ffc25e"/></marker></defs>
+      <style>
+        .rb{fill:#122142;stroke:#2c4a80;stroke-width:1.4}
+        .rt{fill:#dbe7ff;font-size:14px;font-weight:600}
+        .rs{fill:#8fa3c8;font-size:11px}
+        .fa{stroke:#ffc25e;stroke-width:1.6;fill:none;marker-end:url(#ar3)}
+        .wl{fill:#ffc25e;font-size:11px;letter-spacing:2px;font-weight:600}
+      </style>
+      <text class="wl" x="20" y="30">WAVE 1 — IMMEDIATE</text>
+      <rect class="rb" x="20" y="42" width="200" height="60" rx="10"/>
+      <text class="rt" x="38" y="68">Crawl HTML</text><text class="rs" x="38" y="86">raw response parsed</text>
+      <path class="fa" d="M220 72 L268 72"/>
+      <rect class="rb" x="270" y="42" width="200" height="60" rx="10"/>
+      <text class="rt" x="288" y="68">Index static text</text><text class="rs" x="288" y="86">+ queue found links</text>
+      <path class="fa" d="M470 72 L518 72"/>
+      <rect class="rb" x="520" y="42" width="180" height="60" rx="10"/>
+      <text class="rt" x="538" y="68">Render queue</text><text class="rs" x="538" y="86">waits for resources</text>
+
+      <path class="fa" d="M610 102 L610 152"/>
+      <text class="wl" x="20" y="150">WAVE 2 — WHEN RESOURCES ALLOW</text>
+      <rect class="rb" x="420" y="162" width="280" height="70" rx="10"/>
+      <text class="rt" x="438" y="190">WRS: headless Chromium</text>
+      <text class="rs" x="438" y="208">executes JS · builds final DOM</text>
+      <path class="fa" d="M420 197 L368 197"/>
+      <rect class="rb" x="160" y="162" width="205" height="70" rx="10"/>
+      <text class="rt" x="178" y="190">Rendered HTML</text>
+      <text class="rs" x="178" y="208">JS-injected content visible</text>
+      <path class="fa" d="M262 232 L262 272"/>
+      <rect class="rb" x="80" y="274" width="380" height="46" rx="10"/>
+      <text class="rt" x="98" y="302">Re-index with full content · extract new links</text>
+    </svg>
+  </div>
+
+  <div class="cards">
+    <div class="card amber"><div class="h">Render queue</div><p>Rendering a page in a real browser is expensive at web scale, so rendering is deferred into its own queue and happens "once Google's resources allow" — from seconds to much longer.</p></div>
+    <div class="card amber"><div class="h">Evergreen Chromium</div><p>WRS tracks recent Chrome releases, so modern JS features work. It loads CSS/JS/XHR like a browser (subject to robots rules on those resources) but skips things like permission prompts.</p></div>
+    <div class="card amber"><div class="h">Why it matters</div><p>Content that exists only after JS runs is indexed only after Wave 2. Links must be real <code>&lt;a href&gt;</code> elements to be discovered from the rendered DOM.</p></div>
+  </div>
+</section>
+
+<!-- ============ STAGE 4 INDEXING ============ -->
+<section class="rv">
+  <span class="stage-tag green">Stage 04 · Indexing</span>
+  <h2>Indexing — turning pages into a searchable database</h2>
+  <p class="lead">Indexing is where Google works out <em>what a page is about</em> and whether to store it. Since the "Caffeine" rebuild, indexing is continuous and incremental — pages flow into the index within minutes-to-hours instead of waiting for periodic batch rebuilds.</p>
+
+  <h3>Processing steps</h3>
+  <div class="cards">
+    <div class="card green"><div class="h">1 · Content analysis</div><p>Parses textual content and key tags: <code>&lt;title&gt;</code>, headings, <code>alt</code> attributes, structured data, images and video references.</p></div>
+    <div class="card green"><div class="h">2 · Duplicate clustering</div><p>Groups pages with similar content into a cluster, then selects one <strong>canonical</strong> — the version eligible to appear in results. The rest become alternates (e.g. mobile or localized variants).</p></div>
+    <div class="card green"><div class="h">3 · Signal extraction</div><p>Collects signals about the canonical: language, country relevance, page usability, plus the link graph signals (PageRank-style authority) used later at ranking time.</p></div>
+    <div class="card green"><div class="h">4 · Quality gates</div><p>Spam systems (e.g. SpamBrain-class filters) and quality thresholds run here. Low-value, thin or duplicate pages are simply <strong>not indexed</strong> — indexing is never guaranteed.</p></div>
+  </div>
+
+  <h3>How the index itself is designed</h3>
+  <p>The core data structure is an <strong>inverted index</strong>: instead of mapping pages → words, it maps every word → the list of pages containing it (with positions and weights). That flip is what makes searching billions of documents in ~half a second possible.</p>
+
+  <div class="diagram">
+    <div class="cap"><b>Fig. 4</b> — inverted index &amp; sharding</div>
+    <svg viewBox="0 0 720 300" role="img" aria-label="Inverted index diagram">
+      <style>
+        .ib{fill:#122142;stroke:#2c4a80;stroke-width:1.4}
+        .it{fill:#dbe7ff;font-size:13px;font-weight:600}
+        .is{fill:#8fa3c8;font-size:11px}
+        .tk{fill:#7dedb2;font-size:12.5px;font-weight:600}
+        .pl{fill:#8fa3c8;font-size:12px}
+        .shl{stroke:#7dedb2;stroke-width:1.4;fill:none;stroke-dasharray:5 4}
+      </style>
+      <text class="it" x="30" y="30">Term dictionary</text>
+      <rect class="ib" x="20" y="44" width="180" height="40" rx="8"/><text class="tk" x="36" y="69">"crawl"</text>
+      <rect class="ib" x="20" y="94" width="180" height="40" rx="8"/><text class="tk" x="36" y="119">"budget"</text>
+      <rect class="ib" x="20" y="144" width="180" height="40" rx="8"/><text class="tk" x="36" y="169">"googlebot"</text>
+
+      <text class="it" x="260" y="30">Posting lists (docID · position · weight)</text>
+      <rect class="ib" x="250" y="44" width="440" height="40" rx="8"/><text class="pl" x="266" y="69">→ doc4021, doc9928, doc10553, doc77002 …</text>
+      <rect class="ib" x="250" y="94" width="440" height="40" rx="8"/><text class="pl" x="266" y="119">→ doc4021, doc55219, doc61008 …</text>
+      <rect class="ib" x="250" y="144" width="440" height="40" rx="8"/><text class="pl" x="266" y="169">→ doc812, doc4021, doc33417, doc90112 …</text>
+
+      <path class="shl" d="M20 210 L690 210"/>
+      <text class="is" x="20" y="232">The index is split into shards by document, replicated, and hosted on thousands of machines.</text>
+      <text class="is" x="20" y="250">A query fans out to all shards in parallel; each returns its best matches; results are merged.</text>
+      <rect class="ib" x="20" y="262" width="150" height="30" rx="8"/><text class="is" x="52" y="282">shard 1</text>
+      <rect class="ib" x="195" y="262" width="150" height="30" rx="8"/><text class="is" x="227" y="282">shard 2</text>
+      <rect class="ib" x="370" y="262" width="150" height="30" rx="8"/><text class="is" x="402" y="282">shard 3</text>
+      <rect class="ib" x="545" y="262" width="145" height="30" rx="8"/><text class="is" x="574" y="282">shard N…</text>
+    </svg>
+  </div>
+</section>
+
+<!-- ============ STAGE 5 SERVING ============ -->
+<section class="rv">
+  <span class="stage-tag violet">Stage 05 · Serving</span>
+  <h2>Serving — answering a query in ~½ second</h2>
+  <p class="lead">When you search, Google doesn't search the live web — it searches the index. The serving stack retrieves candidate pages and ranks them with hundreds of signals.</p>
+
+  <div class="cards">
+    <div class="card violet"><div class="h">Query understanding</div><p>Spelling, synonyms and intent are resolved first (systems like BERT-era language models help interpret meaning), deciding what kind of results the query deserves.</p></div>
+    <div class="card violet"><div class="h">Retrieval</div><p>The query fans out across index shards in parallel; posting lists are intersected to find every candidate document.</p></div>
+    <div class="card violet"><div class="h">Ranking</div><p>Hundreds of factors score each candidate: relevance, quality/authority from the link graph, freshness, page experience, plus the user's location, language and device.</p></div>
+    <div class="card violet"><div class="h">Assembly</div><p>The results page is composed per query type — local packs for "bicycle repair shop", image blocks for "modern bicycle", plus features like snippets. Ranking is programmatic; placement can't be bought.</p></div>
+  </div>
+</section>
+
+<!-- ============ DESIGN PRINCIPLES ============ -->
+<section class="rv">
+  <span class="stage-tag rose">Design principles</span>
+  <h2>Why it's designed this way</h2>
+  <div class="tbox"><table>
+    <tr><th>Principle</th><th>What it means in the design</th></tr>
+    <tr><td>Distributed everything</td><td>No single machine could hold the web. Crawling, rendering, indexing and serving are each spread over thousands of servers in many data centers, with replication for fault tolerance.</td></tr>
+    <tr><td>Queues decouple stages</td><td>Crawl queue, render queue and indexing pipeline run independently — a slow stage never blocks the others; work just waits.</td></tr>
+    <tr><td>Politeness first</td><td>The crawler treats every website's health as a hard constraint, adapting speed per host from live server feedback.</td></tr>
+    <tr><td>Budget everything</td><td>Compute is finite even for Google: byte limits per fetch, crawl budgets per site, deferred rendering — costs are capped at every stage.</td></tr>
+    <tr><td>Continuous, not batch</td><td>Since Caffeine, the index updates incrementally around the clock, so fresh pages can surface within minutes.</td></tr>
+    <tr><td>Nothing is guaranteed</td><td>Every stage filters: quality gates decide what gets crawled, rendered, indexed and shown. This keeps the index useful rather than exhaustive.</td></tr>
+  </table></div>
+</section>
+
+<!-- ============ SOURCES ============ -->
+<section class="sources rv">
+  <h2>Sources &amp; further reading</h2>
+  <ol>
+    <li><a href="https://developers.google.com/search/docs/fundamentals/how-search-works">Google Search Central — In-depth guide to how Google Search works</a></li>
+    <li><a href="https://developers.google.com/search/docs/crawling-indexing/large-site-managing-crawl-budget">Google Search Central — Crawl budget management (crawl capacity &amp; demand)</a></li>
+    <li><a href="https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics">Google Search Central — JavaScript SEO basics (crawl → render → index)</a></li>
+    <li><a href="https://searchengineland.com/google-explains-how-crawling-works-in-2026-473110">Search Engine Land — Google explains how crawling works (fetch byte limits)</a></li>
+    <li><a href="https://searchengineland.com/guide/what-is-googlebot">Search Engine Land — What is Googlebot</a></li>
+  </ol>
+  <div class="foot">Built as a visual explainer · figures are schematic representations of publicly documented behavior · Aug 2026</div>
+</section>
+
+</div>
+<script>
+const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.08});
+document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>
