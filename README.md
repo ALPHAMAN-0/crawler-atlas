@@ -5,6 +5,23 @@ incremental web crawler: give it a site, it visits on a schedule, notices what
 changed, uses AI to pull the useful facts out of each page, and writes them as
 rows in a table you own.
 
+## Architecture / How it Works
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as Client
+    participant S as Server
+    participant DB as Database
+    U->>C: trigger action
+    C->>S: send request
+    S->>DB: query / mutate
+    DB-->>S: result
+    S-->>C: response
+    C-->>U: update UI
+```
+
+
 **Live page:** https://alphaman-0.github.io/crawler-atlas/
 
 ## Contents
