@@ -2,3 +2,5 @@ saved_resource.html
 saved_resource(1).html
 frame-shell-*.js
 .DS_Store
+config.bat
+node_modules
